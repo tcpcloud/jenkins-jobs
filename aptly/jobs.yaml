@@ -1,0 +1,164 @@
+- job:
+    name: aptly-publish-nightly
+    display-name: "[Aptly] publish nightly"
+    node: pbuilder
+    concurrent: false
+    builders:
+      - shell: |
+          #!/bin/bash -xe
+          if [[ $DEBUG =~ ^(True|true|1|yes)$ ]]; then
+              PUBLISHER_ARGS="$PUBLISHER_ARGS -d"
+          fi
+          if [[ $RECREATE =~ ^(True|true|1|yes)$ ]]; then
+              PUBLISHER_ARGS="$PUBLISHER_ARGS --recreate"
+          fi
+          /usr/bin/aptly-publisher -c /etc/aptly-publisher.yaml $PUBLISHER_ARGS --url http://$APTLY_HOST publish
+    parameters:
+      - string:
+          name: APTLY_HOST
+          default: "{aptly_host}"
+      - bool:
+          name: RECREATE
+          default: false
+          description: Drop publish and create new one. The only way to add new component.
+      - bool:
+          name: DEBUG
+          default: true
+    triggers:
+      - timed: "H 1 * * *"
+      - reverse:
+          jobs: "aptly-snapshot-repo"
+          result: "success"
+
+- job-template:
+    name: aptly-promote-{name}
+    display-name: "[Aptly] promote {source} -> {target}"
+    node: pbuilder
+    concurrent: false
+    builders:
+      - shell: |
+          #!/bin/bash -xe
+          if [[ $DEBUG =~ ^(True|true|1|yes)$ ]]; then
+              PUBLISHER_ARGS="$PUBLISHER_ARGS -d"
+          fi
+          if [[ $RECREATE =~ ^(True|true|1|yes)$ ]]; then
+              PUBLISHER_ARGS="$PUBLISHER_ARGS --recreate"
+          fi
+          if [[ $COMPONENTS == *all* ]]; then
+              PUBLISHER_ARGS="$PUBLISHER_ARGS"
+          else
+              PUBLISHER_ARGS="$PUBLISHER_ARGS --components $(echo $COMPONENTS | sed 's/,/\ /g')"
+          fi
+          if [[ $PACKAGES == *all* ]]; then
+              PUBLISHER_ARGS="$PUBLISHER_ARGS"
+          else
+              PUBLISHER_ARGS="$PUBLISHER_ARGS --packages $(echo $PACKAGES | sed 's/,/\ /g')"
+          fi
+          /usr/bin/aptly-publisher --url http://$APTLY_HOST promote --source $SOURCE --target $TARGET $PUBLISHER_ARGS
+    parameters:
+      - string:
+          name: APTLY_HOST
+          default: "{aptly_host}"
+      - string:
+          name: SOURCE
+          default: "{source}/{dist}"
+      - string:
+          name: TARGET
+          default: "{target}/{dist}"
+      - extended-choice:
+          name: COMPONENTS
+          description: "Components to promote"
+          type: "multi-select"
+          value: all,extra,juno,kilo,liberty,main,oc22,security
+          default-value: all
+      - string:
+          name: PACKAGES
+          default: "all"
+          description: "Comma separated list of packages to promote"
+      - bool:
+          name: RECREATE
+          default: false
+          description: Drop publish and create new one. The only way to add new component.
+      - bool:
+          name: DEBUG
+          default: true
+
+- job-template:
+    name: aptly-diff-{name}
+    display-name: "[Aptly] diff {source} -> {target}"
+    node: pbuilder
+    concurrent: false
+    builders:
+      - shell: |
+          #!/bin/bash -xe
+          if [[ $DEBUG =~ ^(True|true|1|yes)$ ]]; then
+              PUBLISHER_ARGS="$PUBLISHER_ARGS -d"
+          fi
+          if [[ $COMPONENTS == *all* ]]; then
+              PUBLISHER_ARGS="$PUBLISHER_ARGS"
+          else
+              PUBLISHER_ARGS="$PUBLISHER_ARGS --components $(echo $COMPONENTS | sed 's/,/\ /g')"
+          fi
+          /usr/bin/aptly-publisher --dry --url http://$APTLY_HOST promote --source $SOURCE --target $TARGET --diff $PUBLISHER_ARGS
+    parameters:
+      - string:
+          name: APTLY_HOST
+          default: "{aptly_host}"
+      - string:
+          name: SOURCE
+          default: "{source}/{dist}"
+      - string:
+          name: TARGET
+          default: "{target}/{dist}"
+      - extended-choice:
+          name: COMPONENTS
+          description: "Components to diff"
+          type: "multi-select"
+          value: all,extra,juno,kilo,liberty,main,oc22,security
+          default-value: all
+      - bool:
+          name: DEBUG
+          default: false
+
+- job:
+    name: aptly-snapshot-repo
+    display-name: "[Aptly] create repository snapshot"
+    node: pbuilder
+    concurrent: false
+    builders:
+      - shell: |
+          #!/bin/bash -xe
+          snapshot="$APTLY_REPO-$(date +%s)"
+          curl -f -X POST -H "Content-Type: application/json" --data "{\"Name\":\"$snapshot\"}" http://$APTLY_HOST/api/repos/$APTLY_REPO/snapshots
+    parameters:
+      - string:
+          name: APTLY_HOST
+          default: "{aptly_host}"
+      - string:
+          name: APTLY_REPO
+          default: "cloudlab"
+
+- job:
+    name: aptly-cleanup-snapshots
+    display-name: "[Aptly] cleanup old snapshots"
+    node: pbuilder
+    concurrent: false
+    builders:
+      - shell: |
+          #!/bin/bash -xe
+          if [[ $DEBUG =~ ^(True|true|1|yes)$ ]]; then
+              PUBLISHER_ARGS="$PUBLISHER_ARGS -d"
+          fi
+          /usr/bin/aptly-publisher -c /etc/aptly-publisher.yaml $PUBLISHER_ARGS --url http://$APTLY_HOST cleanup
+    parameters:
+      - string:
+          name: APTLY_HOST
+          default: "{aptly_host}"
+      - bool:
+          name: DEBUG
+          default: true
+    triggers:
+      - timed: "H 3 * * *"
+      - reverse:
+          jobs: "aptly-publish-nightly"
+          result: "success"

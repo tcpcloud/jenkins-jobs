@@ -1,0 +1,17 @@
+- project:
+    name: nightly-testing
+    source: nightly
+    target: testing
+    dist: trusty
+    jobs:
+      - 'aptly-promote-{name}'
+      - 'aptly-diff-{name}'
+
+- project:
+    name: testing-stable
+    source: testing
+    target: stable
+    dist: trusty
+    jobs:
+      - 'aptly-promote-{name}'
+      - 'aptly-diff-{name}'

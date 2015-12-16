@@ -1,0 +1,23 @@
+- defaults:
+    name: global
+    project-type: freestyle
+    description: |
+      <p><b>This job is managed by config management and will be overwritten.</b></p>
+      <p><b>Do not edit this job through the web!</b></p>
+      <p>If you would like to make changes to this job, please see:
+        <a href="https://github.com/tcpcloud/jenkins-jobs">git@github.com:tcpcloud/jenkins-jobs.git</a>
+      </p>
+    concurrent: false
+    components_extra: ""
+    cowbuilder_namespace: "default"
+    skip_dch: false
+    skip_adt: true
+    skip_lintian: false
+    deb_build_options: ''
+    deb_keep_build_env: false
+    wrappers:
+      - ansicolor
+    # Ensure correct GPG key is setup
+    gpg_key_id: 'FIXME'
+    # Aptly API
+    aptly_host: 'apt.example.com:8081'

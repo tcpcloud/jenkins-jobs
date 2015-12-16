@@ -1,0 +1,27 @@
+## Requirements for opencontrail
+- project:
+    name: librdkafka
+    # git_url: 'http://github.com/edenhill/{name}.git'
+    git_url: 'git@git.tcpcloud.eu:packages/{name}.git'
+    git_branch: 'debian'
+    aptly_repo: tcp-extra
+    ppa_repo: tcpcloud/extra
+    skip_dch: true
+    jobs:
+      - 'debian-build-{cowbuilder_namespace}-{name}-source'
+      - 'debian-build-{cowbuilder_namespace}-{name}-binary'
+      - 'debian-build-{cowbuilder_namespace}-{name}-upload'
+      - 'debian-build-{cowbuilder_namespace}-{name}-upload-ppa'
+
+- project:
+    name: contrail-api-cli
+    git_url: 'http://github.com/tcpcloud/{name}.git'
+    git_branch: master
+    aptly_repo: tcp-extra
+    ppa_repo: tcpcloud/extra
+    skip_dch: true
+    jobs:
+      - 'debian-build-{cowbuilder_namespace}-{name}-source'
+      - 'debian-build-{cowbuilder_namespace}-{name}-binary'
+      - 'debian-build-{cowbuilder_namespace}-{name}-upload'
+      - 'debian-build-{cowbuilder_namespace}-{name}-upload-ppa'

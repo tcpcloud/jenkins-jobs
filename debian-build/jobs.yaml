@@ -1,0 +1,258 @@
+- job-template:
+    name: debian-build-{cowbuilder_namespace}-{name}-source
+    display-name: "[Package build] {name} ({cowbuilder_namespace}) - source"
+    node: pbuilder
+    concurrent: false
+    builders:
+      - shell: |
+          #!/bin/bash -xe
+          if [[ $SKIP_DCH =~ ^(True|true|1|yes)$ ]]; then
+              export SKIP_DCH="true"
+          fi
+          export KEEP_SOURCE_CHANGES=1
+          export DBP_EXTRA_OPTS="-sa"
+
+          # Hack to generate xstatic orig
+          grep refresh-xstatic: source/debian/rules >/dev/null && (cd source; ./debian/rules refresh-xstatic; cd ..)
+
+          # Hack to generate sdist to make pbr happy without git
+          # TODO: probably doesn't work :-/
+          [[ -e source/setup.cfg && ! -e source/PKG-INFO && ! -d source/*.egg-info ]] && \
+              grep -E '^extend-diff-ignore.*egg-info.*' source/debian/source/options && \
+              (cd source; python setup.py sdist; rm -rf build dist *.egg; ln -s *.egg-info/PKG-INFO; cd ..)
+
+          # We are already clean and we need to keep what we have done above
+          export SKIP_GIT_CLEANUP="true"
+
+          /usr/bin/generate-git-snapshot
+      - shell: |
+          #!/bin/bash
+          mkdir report
+          if [[ $SKIP_LINTIAN =~ ^(True|true|1|yes)$ ]]; then
+            echo "<?xml version='1.0'?><testsuite time='1.0986886024475098' tests='1' failures='0' skipped='0' errors='0' assertions='0'><testcase name='lintian-checks' classname='lintian' assertions='0' time='1.0986886024475098'/></testsuite>" > report/lintian.xml
+            exit 0
+          fi
+          /usr/bin/lintian-junit-report *.dsc > report/lintian.xml
+    publishers:
+      - archive:
+          artifacts: "*.gz,*.bz2,*.xz,*.deb,*.dsc,*.changes,lintian.txt"
+      - junit:
+          results: "**/lintian.xml"
+    wrappers:
+      - ansicolor
+      - workspace-cleanup:
+          include:
+            - "*.gz"
+            - "*.bz2"
+            - "*.xz"
+            - "*.deb"
+            - "*.dsc"
+            - "*.changes"
+            - "lintian.txt"
+    parameters:
+      - string:
+          name: DEBEMAIL
+          default: "Autobuilder <autobuilder@example.com>"
+      - string:
+          name: SKIP_DCH
+          default: "{skip_dch}"
+          description: "Skip creating git snapshot version (true or false)"
+      - string:
+          name: SKIP_LINTIAN
+          default: "{skip_lintian}"
+          description: "Skip lintian tests"
+    scm:
+      - git:
+          url: "{git_url}"
+          skip-tag: true
+          basedir: "source"
+          branches:
+            - "{git_branch}"
+    triggers:
+      # TODO: use gitlab hook
+      - pollscm: "H/15 * * * *"
+
+- job-template:
+    name: debian-build-{cowbuilder_namespace}-{name}-binary
+    display-name: "[Package build] {name} ({cowbuilder_namespace}) - binary"
+    node: pbuilder
+    concurrent: false
+    builders:
+      - copyartifact:
+          project: debian-build-{cowbuilder_namespace}-{name}-source
+          filter: '*'
+          which-build: 'upstream-build'
+          fallback-to-last-successful: true
+      - shell: |
+          #!/bin/bash -xe
+          export COMPONENTS="main security tcp extra"
+          COMPONENTS_EXTRA="{components_extra}"
+          COWBUILDER_NAMESPACE="{cowbuilder_namespace}"
+
+          if [ ! -z "$COMPONENTS_EXTRA" ]; then
+              export COMPONENTS="$COMPONENTS $COMPONENTS_EXTRA"
+          fi
+
+          if [[ ! -z "$COWBUILDER_NAMESPACE" && "$COWBUILDER_NAMESPACE" != 'default' ]]; then
+              dist=$(lsb_release --short --codename 2>/dev/null)
+              arch=$(dpkg-architecture -qDEB_HOST_ARCH)
+              export COWBUILDER_BASE="/var/cache/pbuilder/$COWBUILDER_NAMESPACE-base-$dist-$arch.cow"
+          fi
+
+          if [[ $SKIP_ADT =~ ^(True|true|1|yes)$ ]]; then
+              export ADT="skip"
+          fi
+
+          if [[ $DEB_KEEP_BUILD_ENV =~ ^(True|true|1|yes)$ ]]; then
+              export DEB_KEEP_BUILD_ENV="true"
+          fi
+
+          if [ ! -z "$DEB_BUILD_OPTIONS" ]; then
+              export DEB_BUILD_OPTIONS="$DEB_BUILD_OPTIONS"
+          fi
+
+          /usr/bin/build-and-provide-package
+      - shell: |
+          #!/bin/bash
+          mkdir report
+          if [[ $SKIP_LINTIAN =~ ^(True|true|1|yes)$ ]]; then
+            echo "<?xml version='1.0'?><testsuite time='1.0986886024475098' tests='1' failures='0' skipped='0' errors='0' assertions='0'><testcase name='lintian-checks' classname='lintian' assertions='0' time='1.0986886024475098'/></testsuite>" > report/lintian.xml
+            exit 0
+          fi
+          /usr/bin/lintian-junit-report *.changes > report/lintian.xml
+    publishers:
+      - archive:
+          artifacts: "*.gz,*.bz2,*.xz,*.deb,*.dsc,*.changes,lintian.txt"
+      - junit:
+          results: "**/lintian.xml"
+    wrappers:
+      - workspace-cleanup
+      - ansicolor
+    parameters:
+      - string:
+          name: SKIP_ADT
+          default: "{skip_adt}"
+          description: "Skip autopkgtests run"
+      - string:
+          name: SKIP_LINTIAN
+          default: "{skip_lintian}"
+          description: "Skip lintian tests"
+      - string:
+          name: DEB_KEEP_BUILD_ENV
+          default: "{deb_keep_build_env}"
+          description: "Keep build environment, useful for debug"
+      - string:
+          name: DEB_BUILD_OPTIONS
+          default: "{deb_build_options}"
+          description: "Additional building options"
+    axes:
+      - axis:
+          type: user-defined
+          name: architecture
+          values:
+            - amd64
+    triggers:
+      - reverse:
+          jobs: "debian-build-{cowbuilder_namespace}-{name}-source"
+          result: "success"
+
+- job-template:
+    name: debian-build-{cowbuilder_namespace}-{name}-upload
+    display-name: "[Package build] {name} ({cowbuilder_namespace}) - upload"
+    node: pbuilder
+    concurrent: false
+    builders:
+      - copyartifact:
+          project: debian-build-{cowbuilder_namespace}-{name}-binary
+          filter: '*.deb'
+          which-build: 'upstream-build'
+          fallback-to-last-successful: true
+      - shell: |
+          #!/bin/bash -xe
+          for i in *.deb; do
+              curl -s -f -F file=@$i http://$APTLY_HOST/api/files/{name}
+          done
+          curl -s -o curl_out.log -f -X POST http://$APTLY_HOST/api/repos/$APTLY_REPO/file/{name}
+          cat curl_out.log | json_pp
+          # Check for failed upload
+          set +e
+          cat curl_out.log | json_pp | grep "Unable to add package to repo" >/dev/null
+          if [[ $? -eq 0 ]]; then
+              curl -s -f -X DELETE http://$APTLY_HOST/api/files/{name}
+              echo "[ERROR] Package already exists in repo, did you forget to add changelog entry and raise version?"
+              exit 1
+          fi
+    wrappers:
+      - ansicolor
+      - workspace-cleanup
+    publishers:
+      - trigger-parameterized-builds:
+          - project: aptly-snapshot-repo
+            predefined-parameters: |
+              APTLY_HOST=$APTLY_HOST
+              APTLY_REPO=$APTLY_REPO
+            condition: SUCCESS
+    triggers:
+      - reverse:
+          jobs: "debian-build-{cowbuilder_namespace}-{name}-binary"
+          result: "success"
+    parameters:
+      - string:
+          name: APTLY_HOST
+          default: "{aptly_host}"
+      - string:
+          name: APTLY_REPO
+          default: "{aptly_repo}"
+
+- job-template:
+    name: debian-build-{cowbuilder_namespace}-{name}-upload-ppa
+    display-name: "[Package build] {name} ({cowbuilder_namespace}) - PPA upload"
+    node: pbuilder
+    concurrent: false
+    builders:
+      - copyartifact:
+          project: debian-build-{cowbuilder_namespace}-{name}-source
+          filter: "*.gz,*.bz2,*.xz,*.dsc,*.changes"
+          which-build: 'upstream-build'
+          fallback-to-last-successful: true
+      - shell: |
+          #!/bin/bash -x
+          # Launchpad doesn't allow uploading of orig tarballs that already
+          # exists (eg. when we re-package from Ubuntu archive)
+          for i in *.orig*.tar.gz; do
+            orig=$(ls $i)
+            orig_size=$(ls -l $i | cut -d ' ' -f 5)
+            orig_sha1=$(sha1sum $orig | cut -d ' ' -f 1)
+            orig_sha256=$(sha256sum $orig | cut -d ' ' -f 1)
+            orig_md5=$(md5sum $orig | cut -d ' ' -f 1)
+
+            wget --quiet -O $orig-tmp "https://launchpad.net/ubuntu/+archive/primary/+files/$orig"
+            if [ $? -eq 0 ]; then
+                echo "[WARN] Original tarball found in Ubuntu archive, using it instead"
+                mv $orig-tmp $orig
+                new_size=$(ls -l $i | cut -d ' ' -f 5)
+                new_sha1=$(sha1sum $orig | cut -d ' ' -f 1)
+                new_sha256=$(sha256sum $orig | cut -d ' ' -f 1)
+                new_md5=$(md5sum $orig | cut -d ' ' -f 1)
+                sed -i -e s,$orig_sha1,$new_sha1,g -e s,$orig_sha256,$new_sha256,g -e s,$orig_size,$new_size,g -e s,$orig_md5,$new_md5,g *.dsc
+                sed -i -e s,$orig_sha1,$new_sha1,g -e s,$orig_sha256,$new_sha256,g -e s,$orig_size,$new_size,g -e s,$orig_md5,$new_md5,g *.changes
+            fi
+          done
+
+          set -e
+          debsign --re-sign -k $GPG_KEY_ID *.changes
+          dput -f "ppa:$PPA_REPO" *.changes
+    wrappers:
+      - ansicolor
+      - workspace-cleanup
+    triggers:
+      - reverse:
+          jobs: "debian-build-{cowbuilder_namespace}-{name}-upload"
+          result: "success"
+    parameters:
+      - string:
+          name: PPA_REPO
+          default: "{ppa_repo}"
+      - string:
+          name: GPG_KEY_ID
+          default: "{gpg_key_id}"

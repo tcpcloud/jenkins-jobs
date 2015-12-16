@@ -1,0 +1,131 @@
+- job-template:
+    name: contrail-build-{name}-source
+    display-name: "[Contrail build] {name} - source"
+    node: pbuilder
+    concurrent: false
+    builders:
+      - shell:
+          !include-raw-escape contrail_build_source.sh
+    publishers:
+      - archive:
+          artifacts: "build/build/packages/*.gz,build/build/packages/*.bz2,build/build/packages/*.xz,build/build/packages/*.deb,build/build/packages/*.dsc,build/build/packages/*.changes"
+    parameters:
+      - string:
+          name: CONTRAIL_BRANCH
+          default: "{branch}"
+      - string:
+          name: CONTRAIL_VNC_REPO
+          default: "git@github.com:Juniper/contrail-vnc.git"
+      - extended-choice:
+          name: TARGETS
+          description: "Build targets"
+          type: "multi-select"
+          value: all,contrail,contrail-web-core,contrail-web-controller,neutron-plugin-contrail,ceilometer-plugin-contrail,contrail-heat
+          default-value: all
+      - bool:
+          name: WIPE_WORKSPACE
+          description: "Wipe workspace before build"
+          default: false
+
+- job-template:
+    name: contrail-build-{name}-binary
+    display-name: "[Contrail build] {name} - binary"
+    concurrent: false
+    builders:
+      - copyartifact:
+          project: contrail-build-{name}-source
+          filter: 'build/build/packages/*'
+          flatten: true
+          which-build: 'upstream-build'
+          fallback-to-last-successful: true
+      - shell:
+          !include-raw-escape contrail_build_binary.sh
+    wrappers:
+      - workspace-cleanup
+      - ansicolor
+    publishers:
+      - archive:
+          artifacts: "*/*.deb,*/*.changes"
+    axes:
+      - axis:
+          type: user-defined
+          name: architecture
+          values:
+            - amd64
+    triggers:
+      - reverse:
+          jobs: "contrail-build-{name}-source"
+          result: "success"
+
+- job-template:
+    name: contrail-build-{name}-upload
+    display-name: "[Contrail build] {name} - upload"
+    node: pbuilder
+    concurrent: false
+    builders:
+      - copyartifact:
+          project: contrail-build-{name}-binary
+          filter: '*.deb,*/*.deb'
+          flatten: true
+          which-build: 'upstream-build'
+          fallback-to-last-successful: true
+      - shell: |
+          #!/bin/bash -xe
+          for i in *.deb; do
+              curl -f -F file=@$i http://$APTLY_HOST/api/files/{name}
+          done
+          curl -f -X POST http://$APTLY_HOST/api/repos/$APTLY_REPO/file/{name}
+    wrappers:
+      - workspace-cleanup
+      - ansicolor
+    publishers:
+      - trigger-parameterized-builds:
+          - project: aptly-snapshot-repo
+            predefined-parameters: |
+              APTLY_HOST=$APTLY_HOST
+              APTLY_REPO=$APTLY_REPO
+            condition: SUCCESS
+    triggers:
+      - reverse:
+          jobs: "contrail-build-{name}-binary"
+          result: "success"
+    parameters:
+      - string:
+          name: APTLY_HOST
+          default: "{aptly_host}"
+      - string:
+          name: APTLY_REPO
+          default: "{name}"
+
+- job-template:
+    name: contrail-build-{name}-upload-ppa
+    display-name: "[Contrail build] {name} - PPA upload"
+    node: pbuilder
+    concurrent: false
+    builders:
+      - copyartifact:
+          project: contrail-build-{name}-source
+          filter: 'build/build/packages/*'
+          flatten: true
+          which-build: 'upstream-build'
+          fallback-to-last-successful: true
+      - shell: |
+          #!/bin/bash -xe
+          for i in *.changes; do
+              debsign -k $GPG_KEY_ID $i
+              dput -f "ppa:$PPA_REPO" $i
+          done
+    wrappers:
+      - workspace-cleanup
+      - ansicolor
+    triggers:
+      - reverse:
+          jobs: "contrail-build-{name}-upload"
+          result: "success"
+    parameters:
+      - string:
+          name: PPA_REPO
+          default: "{ppa_repo}"
+      - string:
+          name: GPG_KEY_ID
+          default: "{gpg_key_id}"

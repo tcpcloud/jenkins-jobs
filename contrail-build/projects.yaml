@@ -1,0 +1,9 @@
+- project:
+    name: oc22
+    branch: 'R2.21.x'
+#   ppa_repo: tcpcloud/contrail-2.20
+    jobs:
+      - 'contrail-build-{name}-source'
+      - 'contrail-build-{name}-binary'
+      - 'contrail-build-{name}-upload'
+#     - 'contrail-build-{name}-upload-ppa'

@@ -1,0 +1,13 @@
+# Extra packages
+- job-group:
+    name: 'debian-build-extra-{name}'
+    git_url: 'git@git.tcpcloud.eu:packages/{name}.git'
+    git_branch: 'master'
+    aptly_repo: tcp-extra
+    ppa_repo: tcpcloud/extra
+    skip_dch: true
+    jobs:
+      - 'debian-build-{cowbuilder_namespace}-{name}-source'
+      - 'debian-build-{cowbuilder_namespace}-{name}-binary'
+      - 'debian-build-{cowbuilder_namespace}-{name}-upload'
+      - 'debian-build-{cowbuilder_namespace}-{name}-upload-ppa'
