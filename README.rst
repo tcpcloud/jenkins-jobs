@@ -80,7 +80,7 @@ packages.
     *  - **debian-build-{cowbuilder_namespace}-{name}-binary**
        - Build package from source package.
          Executed after ``*-source`` build
-    *  - ** debian-build-{cowbuilder_namespace}-{name}-upload**
+    *  - **debian-build-{cowbuilder_namespace}-{name}-upload**
        - Upload binary package into Aptly repository.
          Executed after successful ``*-binary`` build
     *  - **debian-build-{cowbuilder_namespace}-{name}-upload-ppa**
