@@ -48,17 +48,17 @@ Aptly
     *  - **aptly-publish-nightly**
        - Run `aptly-publisher` to update `nightly` publish from latest
          snapshots.
-         Executed after `aptly-snapshot-repo`
+         Executed after ``aptly-snapshot-repo``
     *  - **aptly-promote-{name}**
-       - Run `aptly-publisher` to promote snapshots/packages from source
+       - Run ``aptly-publisher`` to promote snapshots/packages from source
          publish to target (eg. nightly -> testing)
     *  - **aptly-diff-{name}**
-       - Run `aptly-publisher` to diff changes between publishes
+       - Run ``aptly-publisher`` to diff changes between publishes
     *  - **aptly-snapshot-repo**
        - Create snapshot of given repository
     *  - **aptly-cleanup-snapshots**
        - Cleanup old snapshots which are not used for any publish.
-         Executed after `aptly-publish-nightly`
+         Executed after ``aptly-publish-nightly``
 
 For more informations, see Aptly_ and aptly-publisher_.
 
@@ -79,14 +79,14 @@ packages.
        - Build source package from Git repository
     *  - **debian-build-{cowbuilder_namespace}-{name}-binary**
        - Build package from source package.
-         Executed after `*-source` build
+         Executed after ``*-source`` build
     *  - ** debian-build-{cowbuilder_namespace}-{name}-upload**
        - Upload binary package into Aptly repository.
-         Executed after successful `*-binary` build
+         Executed after successful ``*-binary`` build
     *  - **debian-build-{cowbuilder_namespace}-{name}-upload-ppa**
        - Upload source package into Launchpad PPA repository (to be built by
          Launchpad).
-         Executed after successful `*-binary` build
+         Executed after successful ``*-binary`` build
 
 For more informations see:
 
@@ -103,10 +103,10 @@ Contrail package builds
          script
     *  - **contrail-build-{name}-binary**
        - Use jenkins-debian-glue to build binary package.
-         Executed after `*-source` build
+         Executed after ``*-source`` build
     *  - **contrail-build-{name}-upload**
        - Upload binary package to Aptly.
-         Executed after `*-binary` build
+         Executed after ``*-binary`` build
     *  - **contrail-build-{name}-upload-ppa**
        - Upload source package to Launchpad PPA repository.
-         Executed after `*-binary` build
+         Executed after ``*-binary`` build
